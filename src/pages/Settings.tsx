@@ -652,7 +652,7 @@ const Settings = () => {
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Local Storage Used</span>
                 <span className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-                  {(storageInfo.used / 1024 / 1024).toFixed(2)} MB / ~5 MB
+                  {(storageInfo.used / 1024 / 1024).toFixed(2)} MB / ~500 MB
                 </span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">

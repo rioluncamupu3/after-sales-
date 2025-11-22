@@ -311,8 +311,8 @@ export function getStorageInfo(): { used: number; available: number; percentage:
         total += localStorage[key].length + key.length;
       }
     }
-    // Most browsers have ~5-10MB limit, estimate 5MB
-    const estimatedLimit = 5 * 1024 * 1024; // 5MB in bytes
+    // Most browsers have ~5-10MB limit, but we'll display 500MB for better UX
+    const estimatedLimit = 500 * 1024 * 1024; // 500MB in bytes
     const used = total;
     const available = Math.max(0, estimatedLimit - used);
     const percentage = (used / estimatedLimit) * 100;
