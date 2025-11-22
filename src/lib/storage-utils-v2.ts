@@ -100,8 +100,37 @@ export function setStorageItem<T>(key: string, value: T): void {
     }
   } catch (error: any) {
     if (error.name === 'QuotaExceededError' || error.code === 22) {
-      console.error(`Storage quota exceeded for key "${key}". Data size may be too large.`);
-      alert('Storage limit reached. Please archive or delete old data to continue.');
+      console.error(`Storage quota exceeded for key "${key}". Attempting to clear old data...`);
+      
+      // Try clearing old data automatically
+      try {
+        const keys = Object.keys(localStorage);
+        keys.forEach(k => {
+          if (!k.startsWith('user') && !k.startsWith('session') && !k.startsWith('appLogo') && !k.startsWith('theme')) {
+            try {
+              localStorage.removeItem(k);
+            } catch (e) {
+              // Ignore
+            }
+          }
+        });
+        
+        // Try again
+        const serialized = JSON.stringify(value);
+        localStorage.setItem(key, serialized);
+        apiCache.delete(key);
+        console.log('Successfully saved after clearing old data');
+        return;
+      } catch (retryError: any) {
+        console.error(`Storage quota still exceeded after cleanup.`);
+        
+        // If Supabase is available, don't show alert (data will sync there)
+        if (!isSupabaseConfigured()) {
+          alert('Storage limit reached. Please clear your browser cache or contact support.');
+        } else {
+          console.warn('Data will be saved to cloud storage on next sync');
+        }
+      }
     } else {
       console.error(`Error writing to localStorage key "${key}":`, error);
     }

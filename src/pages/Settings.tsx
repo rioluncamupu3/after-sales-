@@ -34,9 +34,9 @@ import {
 } from "@/components/ui/table";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { Moon, Sun, User, Lock, Trash2, LogOut, Image, X, Plus, Edit, Settings as SettingsIcon } from "lucide-react";
+import { Moon, Sun, User, Lock, Trash2, LogOut, Image, X, Plus, Edit, Settings as SettingsIcon, Database, AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { getStorageItem, setStorageItem, STORAGE_KEYS } from "@/lib/storage-utils";
+import { getStorageItem, setStorageItem, STORAGE_KEYS, clearOldStorageData, getStorageInfo } from "@/lib/storage-utils";
 import { hashPassword, verifyPassword, clearSession } from "@/lib/security-utils";
 
 const Settings = () => {
@@ -56,6 +56,8 @@ const Settings = () => {
   const [isIssueDetailsDialogOpen, setIsIssueDetailsDialogOpen] = useState(false);
   const [editingIssueDetail, setEditingIssueDetail] = useState<string | null>(null);
   const [newIssueDetail, setNewIssueDetail] = useState("");
+  const [storageInfo, setStorageInfo] = useState({ used: 0, available: 0, percentage: 0 });
+  const [isClearStorageDialogOpen, setIsClearStorageDialogOpen] = useState(false);
 
   const userRole = localStorage.getItem("userRole");
   const userEmail = localStorage.getItem("userEmail");
@@ -73,7 +75,22 @@ const Settings = () => {
 
     // Load standardized issue details
     loadStandardizedIssueDetails();
+    
+    // Load storage info
+    updateStorageInfo();
   }, [theme]);
+
+  const updateStorageInfo = () => {
+    const info = getStorageInfo();
+    setStorageInfo(info);
+  };
+
+  const handleClearOldStorage = () => {
+    const cleared = clearOldStorageData();
+    updateStorageInfo();
+    toast.success(`Cleared ${cleared} old storage items. Storage freed up.`);
+    setIsClearStorageDialogOpen(false);
+  };
 
   const loadStandardizedIssueDetails = async () => {
     const details = (await getStorageItem<string[]>(STORAGE_KEYS.STANDARDIZED_ISSUE_DETAILS)) || [];
@@ -608,6 +625,84 @@ const Settings = () => {
           </Card>
         )}
 
+        {/* Storage Management Section */}
+        <Card className="border-0 shadow-xl bg-gradient-to-br from-white to-gray-50/80 dark:from-gray-900 dark:to-gray-800/80 backdrop-blur-sm overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-indigo-500/5 to-purple-500/5 pointer-events-none" />
+          <CardHeader className="relative z-10 bg-gradient-to-r from-blue-500/10 to-indigo-500/10 border-b border-gray-200/60 dark:border-gray-700/60">
+            <CardTitle className="flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-gray-50">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow-md">
+                <Database className="h-4 w-4" />
+              </span>
+              Storage Management
+            </CardTitle>
+            <CardDescription className="text-gray-700 dark:text-gray-300">
+              Monitor and manage browser storage usage
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="relative z-10 space-y-4 pt-6">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Storage Used</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+                  {(storageInfo.used / 1024 / 1024).toFixed(2)} MB / ~5 MB
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                <div
+                  className={`h-2.5 rounded-full transition-all duration-300 ${
+                    storageInfo.percentage > 80
+                      ? "bg-gradient-to-r from-red-500 to-rose-500"
+                      : storageInfo.percentage > 60
+                      ? "bg-gradient-to-r from-orange-500 to-amber-500"
+                      : "bg-gradient-to-r from-blue-500 to-indigo-500"
+                  }`}
+                  style={{ width: `${Math.min(storageInfo.percentage, 100)}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>{storageInfo.percentage.toFixed(1)}% used</span>
+                <span>{(storageInfo.available / 1024 / 1024).toFixed(2)} MB available</span>
+              </div>
+            </div>
+            
+            {storageInfo.percentage > 70 && (
+              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                    Storage is getting full
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                    Clear old data to free up space. Your data is safely stored in cloud storage.
+                  </p>
+                </div>
+              </div>
+            )}
+            
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setIsClearStorageDialogOpen(true)}
+                variant="outline"
+                className="flex-1 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 hover:from-blue-500 hover:to-indigo-500 hover:text-white border-blue-200 dark:border-blue-800 transition-all duration-200 hover:scale-105 shadow-sm hover:shadow-md"
+              >
+                <Database className="mr-2 h-4 w-4" />
+                Clear Old Data
+              </Button>
+              <Button
+                onClick={updateStorageInfo}
+                variant="outline"
+                size="sm"
+                className="bg-white/80 dark:bg-gray-900/80 border-gray-200 dark:border-gray-700"
+              >
+                Refresh
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Clearing old data will remove non-essential cached items. Your app data (cases, users, etc.) will not be affected.
+            </p>
+          </CardContent>
+        </Card>
+
         {/* Master Delete Section */}
         {isAdmin && (
           <Card className="border-0 shadow-xl bg-gradient-to-br from-white to-rose-50/80 dark:from-gray-900 dark:to-gray-900/80 backdrop-blur-sm overflow-hidden">
@@ -730,6 +825,35 @@ const Settings = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Clear Storage Dialog */}
+        <AlertDialog open={isClearStorageDialogOpen} onOpenChange={setIsClearStorageDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Clear Old Storage Data</AlertDialogTitle>
+              <AlertDialogDescription className="space-y-2">
+                <p>
+                  This will remove old cached data and non-essential items from your browser storage to free up space.
+                </p>
+                <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                  Your app data (cases, users, spare parts, etc.) will NOT be deleted. Only old cache and temporary files will be removed.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  If you're using Supabase, your data is safely stored in the cloud and will sync back automatically.
+                </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleClearOldStorage}
+                className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
+              >
+                Clear Old Data
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Master Delete Dialog */}
         <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

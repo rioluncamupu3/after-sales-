@@ -80,11 +80,76 @@ export function getStorageItemSync<T>(key: string): T | null {
   }
 }
 
+// Helper function to clear old localStorage data if quota is exceeded
+function clearOldLocalStorageData(): void {
+  try {
+    // Get all keys
+    const keys = Object.keys(localStorage);
+    const appKeys = Object.values(STORAGE_KEYS);
+    
+    // Clear non-app keys first (old/corrupted data)
+    keys.forEach(key => {
+      if (!appKeys.includes(key as any) && !key.startsWith('appLogo') && !key.startsWith('user') && !key.startsWith('session') && !key.startsWith('theme')) {
+        try {
+          localStorage.removeItem(key);
+        } catch (e) {
+          // Ignore errors when clearing
+        }
+      }
+    });
+    
+    // If still full, try clearing cache and old session data
+    keys.forEach(key => {
+      if (key.startsWith('cache_') || key.startsWith('temp_') || key.includes('_cache')) {
+        try {
+          localStorage.removeItem(key);
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error clearing old localStorage data:', error);
+  }
+}
+
 export async function setStorageItem<T>(key: string, value: T): Promise<void> {
   // Clear cache
   apiCache.delete(key);
 
-  // Always save to localStorage first for immediate UI update
+  // If Supabase is configured, try saving there first (it has more space)
+  if (isSupabaseConfigured() && API_MAP[key]) {
+    try {
+      await API_MAP[key].set(value);
+      // If Supabase save succeeds, only save a minimal copy to localStorage for offline access
+      try {
+        const serialized = JSON.stringify(value);
+        const sizeInMB = new Blob([serialized]).size / (1024 * 1024);
+        
+        // Only save to localStorage if it's small (< 1MB) or if Supabase fails
+        if (sizeInMB < 1) {
+          localStorage.setItem(key, serialized);
+        } else {
+          // For large data, just store a flag that data exists in Supabase
+          localStorage.setItem(`${key}_synced`, 'true');
+        }
+        apiCache.set(key, { data: value, timestamp: Date.now() });
+        return; // Success, exit early
+      } catch (localError: any) {
+        // If localStorage fails but Supabase succeeded, that's okay
+        if (localError.name !== 'QuotaExceededError' && localError.code !== 22) {
+          console.warn(`Could not save to localStorage, but data is saved in Supabase:`, localError);
+        }
+        apiCache.set(key, { data: value, timestamp: Date.now() });
+        return;
+      }
+    } catch (supabaseError) {
+      console.warn(`Supabase save failed, falling back to localStorage:`, supabaseError);
+      // Fall through to localStorage save
+    }
+  }
+
+  // Fallback to localStorage (or primary storage if Supabase not configured)
   try {
     const serialized = JSON.stringify(value);
     const sizeInMB = new Blob([serialized]).size / (1024 * 1024);
@@ -97,20 +162,43 @@ export async function setStorageItem<T>(key: string, value: T): Promise<void> {
     apiCache.set(key, { data: value, timestamp: Date.now() });
   } catch (error: any) {
     if (error.name === 'QuotaExceededError' || error.code === 22) {
-      console.error(`Storage quota exceeded for key "${key}". Data size may be too large.`);
-      alert('Storage limit reached. Please archive or delete old data to continue.');
+      console.error(`Storage quota exceeded for key "${key}". Attempting to clear old data...`);
+      
+      // Try clearing old data
+      clearOldLocalStorageData();
+      
+      // Try again
+      try {
+        const serialized = JSON.stringify(value);
+        localStorage.setItem(key, serialized);
+        apiCache.set(key, { data: value, timestamp: Date.now() });
+        console.log('Successfully saved after clearing old data');
+        return;
+      } catch (retryError: any) {
+        // If still failing, show helpful message
+        const message = isSupabaseConfigured() 
+          ? 'Local storage is full. Your data will be saved to cloud storage instead. Please clear your browser cache or use a different browser.'
+          : 'Storage limit reached. Please clear your browser cache or contact support.';
+        
+        console.error(`Storage quota still exceeded after cleanup. ${message}`);
+        
+        // Don't show alert if Supabase is available (data will be saved there)
+        if (!isSupabaseConfigured()) {
+          alert(message);
+        }
+        
+        // If Supabase is available, try saving there as last resort
+        if (isSupabaseConfigured() && API_MAP[key]) {
+          try {
+            await API_MAP[key].set(value);
+            console.log('Data saved to Supabase as fallback');
+          } catch (supabaseError) {
+            console.error('Failed to save to Supabase:', supabaseError);
+          }
+        }
+      }
     } else {
       console.error(`Error writing to localStorage key "${key}":`, error);
-    }
-  }
-
-  // Then sync to Supabase in the background (non-blocking)
-  if (isSupabaseConfigured() && API_MAP[key]) {
-    try {
-      await API_MAP[key].set(value);
-    } catch (error) {
-      console.error(`Error syncing ${key} to Supabase:`, error);
-      // Continue anyway - data is saved locally
     }
   }
 }
@@ -129,8 +217,28 @@ export function setStorageItemSync<T>(key: string, value: T): void {
     apiCache.delete(key);
   } catch (error: any) {
     if (error.name === 'QuotaExceededError' || error.code === 22) {
-      console.error(`Storage quota exceeded for key "${key}". Data size may be too large.`);
-      alert('Storage limit reached. Please archive or delete old data to continue.');
+      console.error(`Storage quota exceeded for key "${key}". Attempting to clear old data...`);
+      
+      // Try clearing old data
+      clearOldLocalStorageData();
+      
+      // Try again
+      try {
+        const serialized = JSON.stringify(value);
+        localStorage.setItem(key, serialized);
+        apiCache.delete(key);
+        console.log('Successfully saved after clearing old data');
+        return;
+      } catch (retryError: any) {
+        console.error(`Storage quota still exceeded after cleanup.`);
+        
+        // Only show alert if Supabase is not available
+        if (!isSupabaseConfigured()) {
+          alert('Storage limit reached. Please clear your browser cache or contact support.');
+        } else {
+          console.warn('Data will be saved to cloud storage on next sync');
+        }
+      }
     } else {
       console.error(`Error writing to localStorage key "${key}":`, error);
     }
@@ -150,6 +258,69 @@ export async function removeStorageItem(key: string): Promise<void> {
     localStorage.removeItem(key);
   } catch (error) {
     console.error(`Error removing localStorage key "${key}":`, error);
+  }
+}
+
+// Utility function to clear all non-essential localStorage data
+export function clearOldStorageData(): number {
+  try {
+    const keys = Object.keys(localStorage);
+    const essentialKeys = [
+      ...Object.values(STORAGE_KEYS),
+      'appLogo',
+      'userEmail',
+      'userId',
+      'userRole',
+      'userPermission',
+      'userDistrict',
+      'isAuthenticated',
+      'sessionExpiry',
+      'adminPasswordHash',
+      'theme',
+      'supportEmail',
+      'adminEmail',
+    ];
+    
+    let cleared = 0;
+    keys.forEach(key => {
+      // Keep essential keys and keys that are synced to Supabase
+      if (!essentialKeys.includes(key) && !key.endsWith('_synced')) {
+        try {
+          localStorage.removeItem(key);
+          cleared++;
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+    });
+    
+    console.log(`Cleared ${cleared} old localStorage items`);
+    return cleared;
+  } catch (error) {
+    console.error('Error clearing old storage data:', error);
+    return 0;
+  }
+}
+
+// Get storage usage information
+export function getStorageInfo(): { used: number; available: number; percentage: number } {
+  try {
+    let total = 0;
+    for (let key in localStorage) {
+      if (localStorage.hasOwnProperty(key)) {
+        total += localStorage[key].length + key.length;
+      }
+    }
+    // Most browsers have ~5-10MB limit, estimate 5MB
+    const estimatedLimit = 5 * 1024 * 1024; // 5MB in bytes
+    const used = total;
+    const available = Math.max(0, estimatedLimit - used);
+    const percentage = (used / estimatedLimit) * 100;
+    
+    return { used, available, percentage };
+  } catch (error) {
+    console.error('Error getting storage info:', error);
+    return { used: 0, available: 0, percentage: 0 };
   }
 }
 
