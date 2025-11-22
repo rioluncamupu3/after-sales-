@@ -312,13 +312,42 @@ const Import = () => {
 
         // Process merge logic in batches to avoid memory issues
         if (importMode === "replace") {
-          // Replace all existing data - save directly to Supabase in batches
+          // Replace all existing data - use safe replace function
           updatedRawData = newRawData;
           newRecords = newRawData.length;
           updatedRecords = 0;
           
-          // Save in batches to avoid storage quota issues
-          await saveDataInBatches(updatedRawData, BATCH_SIZE);
+          // Use safe replace function that upserts first, then deletes old records
+          // This ensures data is never lost
+          const { isSupabaseConfigured } = await import('@/lib/supabase-client');
+          const { api } = await import('@/lib/api-service');
+          const isSupabase = isSupabaseConfigured();
+          
+          if (isSupabase) {
+            try {
+              console.log(`Replacing all data with ${newRawData.length} records...`);
+              await api.replaceRawData(newRawData);
+              console.log('Successfully replaced data in Supabase');
+              
+              // Also save subset to localStorage for offline access
+              const localStorageSubset = newRawData.slice(-1000);
+              try {
+                const subsetJson = JSON.stringify(localStorageSubset);
+                if (subsetJson.length < 4 * 1024 * 1024) {
+                  localStorage.setItem(STORAGE_KEYS.RAW_DATA, subsetJson);
+                }
+              } catch (localError) {
+                console.warn('Could not save to localStorage, but data is in Supabase:', localError);
+              }
+            } catch (error) {
+              console.error('Error replacing data in Supabase:', error);
+              // Fallback to localStorage
+              await saveDataInBatches(updatedRawData, BATCH_SIZE);
+            }
+          } else {
+            // Fallback to localStorage
+            await saveDataInBatches(updatedRawData, BATCH_SIZE);
+          }
         } else if (importMode === "append") {
           // Append only - don't update existing records
           updatedRawData = [...existingRawData];
