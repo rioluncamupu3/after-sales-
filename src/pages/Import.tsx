@@ -373,7 +373,7 @@ const Import = () => {
         setExcelData({ headers, rows: rows.slice(0, 100) }); // Only show first 100 rows in preview
         
         const modeText = importMode === "replace" ? "replaced" : importMode === "append" ? "added (append only)" : "imported";
-        const fileSizeMB = file.size / (1024 * 1024);
+        // fileSizeMB is already declared earlier in this scope (line 183)
         const successMessage = fileSizeMB > 50
           ? `Successfully ${modeText} ${newRawData.length} records. Data saved to cloud storage. New: ${newRecords}, Updated: ${updatedRecords}, Total: ${updatedRawData.length}`
           : `Successfully ${modeText} ${newRawData.length} records. New: ${newRecords}, Updated: ${updatedRecords}, Total: ${updatedRawData.length}`;
