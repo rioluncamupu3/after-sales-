@@ -45,6 +45,7 @@ import { toast } from "sonner";
 import { MaintenanceCase, RawData, MaintenanceStatus, District, SparePart } from "@/lib/data-models";
 import { calculateWarrantyStatus, calculateWarrantyEndDate, getWarrantyDaysRemaining } from "@/lib/warranty-utils";
 import { getStorageItem, setStorageItem, STORAGE_KEYS } from "@/lib/storage-utils";
+import { api } from "@/lib/api-service";
 import { differenceInCalendarDays, format } from "date-fns";
 
 const MAINTENANCE_STATUSES: MaintenanceStatus[] = [
@@ -246,7 +247,8 @@ const Cases = () => {
       return;
     }
 
-    const rawData = (await getStorageItem<RawData[]>(STORAGE_KEYS.RAW_DATA)) || [];
+    // Use API service which checks Supabase first, then localStorage
+    const rawData = (await api.getRawData()) || [];
     
     if (rawData.length === 0) {
       toast.error("No customer data found. Please import data first from the Import Data page.");

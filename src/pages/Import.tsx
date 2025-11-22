@@ -8,6 +8,7 @@ import * as XLSX from "xlsx-js-style";
 import mammoth from "mammoth";
 import { RawData } from "@/lib/data-models";
 import { getStorageItem, setStorageItem, STORAGE_KEYS } from "@/lib/storage-utils";
+import { api } from "@/lib/api-service";
 import {
   Table,
   TableBody,
@@ -392,11 +393,15 @@ const Import = () => {
           await saveDataInBatches(updatedRawData, BATCH_SIZE);
         }
 
-        setTotalRecords(updatedRawData.length);
+        // Refresh total records from database to ensure accuracy
+        const finalData = await api.getRawData();
+        const finalCount = finalData?.length || updatedRawData.length;
+        
+        setTotalRecords(finalCount);
         setLastImportStats({
           newRecords,
           updatedRecords,
-          totalRecords: updatedRawData.length,
+          totalRecords: finalCount,
           importDate: importTimestamp,
         });
         setExcelData({ headers, rows: rows.slice(0, 100) }); // Only show first 100 rows in preview
@@ -404,8 +409,8 @@ const Import = () => {
         const modeText = importMode === "replace" ? "replaced" : importMode === "append" ? "added (append only)" : "imported";
         // fileSizeMB is already declared earlier in this scope (line 183)
         const successMessage = fileSizeMB > 50
-          ? `Successfully ${modeText} ${newRawData.length} records. Data saved to cloud storage. New: ${newRecords}, Updated: ${updatedRecords}, Total: ${updatedRawData.length}`
-          : `Successfully ${modeText} ${newRawData.length} records. New: ${newRecords}, Updated: ${updatedRecords}, Total: ${updatedRawData.length}`;
+          ? `Successfully ${modeText} ${newRawData.length} records. Data saved to cloud storage. New: ${newRecords}, Updated: ${updatedRecords}, Total: ${finalCount}`
+          : `Successfully ${modeText} ${newRawData.length} records. New: ${newRecords}, Updated: ${updatedRecords}, Total: ${finalCount}`;
         
         toast.success(successMessage, { duration: 5000 });
         setProcessingProgress({ current: 100, total: 100 });
@@ -486,7 +491,8 @@ const Import = () => {
   // Load total records count on mount
   useEffect(() => {
     const loadTotalRecords = async () => {
-      const existingData = (await getStorageItem<RawData[]>(STORAGE_KEYS.RAW_DATA)) || [];
+      // Use API service which checks Supabase first, then localStorage
+      const existingData = (await api.getRawData()) || [];
       setTotalRecords(existingData.length);
     };
     loadTotalRecords();

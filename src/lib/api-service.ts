@@ -71,10 +71,15 @@ export async function apiGet<T>(tableName: string): Promise<T | null> {
   if (isSupabaseConfigured() && supabase) {
     try {
       const supabaseTableName = getSupabaseTableName(tableName);
+      
+      // Determine the order column based on table name
+      // raw_data uses imported_at, others use created_at
+      const orderColumn = supabaseTableName === 'raw_data' ? 'imported_at' : 'created_at';
+      
       const { data, error } = await supabase
         .from(supabaseTableName)
         .select('*')
-        .order('created_at', { ascending: false });
+        .order(orderColumn, { ascending: false });
       
       if (error) {
         console.error(`Error fetching ${tableName} from Supabase:`, error);
