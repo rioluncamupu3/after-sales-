@@ -77,7 +77,12 @@ export async function apiGet<T>(tableName: string): Promise<T | null> {
         .order('created_at', { ascending: false });
       
       if (error) {
-        console.error(`Error fetching ${tableName}:`, error);
+        console.error(`Error fetching ${tableName} from Supabase:`, error);
+        // If it's an auth error, log it clearly
+        if (error.message?.includes('JWT') || error.message?.includes('authentication')) {
+          console.error('Supabase authentication error. Please check your VITE_SUPABASE_ANON_KEY in environment variables.');
+          console.error('Expected Supabase URL format: https://xxxxx.supabase.co');
+        }
         // Fallback to localStorage
         return getLocalStorageItem<T>(tableName);
       }
@@ -85,8 +90,12 @@ export async function apiGet<T>(tableName: string): Promise<T | null> {
       // Convert snake_case to camelCase
       const camelData = toCamelCase(data);
       return camelData as T;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error fetching ${tableName}:`, error);
+      // Log the actual error details
+      if (error?.message) {
+        console.error('Error details:', error.message);
+      }
       return getLocalStorageItem<T>(tableName);
     }
   }
