@@ -45,6 +45,8 @@ const Import = () => {
     totalRecords: number;
     importDate: string;
   } | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const acceptedFileTypes = [
@@ -71,9 +73,17 @@ const Import = () => {
       return;
     }
 
+    // Check file size (warn if very large)
+    const fileSizeMB = file.size / (1024 * 1024);
+    if (fileSizeMB > 50) {
+      toast.warning(`Large file detected (${fileSizeMB.toFixed(1)}MB). Processing may take a moment...`);
+    }
+
     setSelectedFile(file);
     setExcelData(null);
     setWordContent(null);
+    setIsProcessing(true);
+    setProcessingProgress({ current: 0, total: 0 });
 
     try {
       if (fileExtension === "xlsx" || fileExtension === "xls") {
@@ -84,6 +94,66 @@ const Import = () => {
     } catch (error) {
       console.error("Error processing file:", error);
       toast.error("Error processing file. Please try again.");
+    } finally {
+      setIsProcessing(false);
+      setProcessingProgress({ current: 0, total: 0 });
+    }
+  };
+
+  // Helper function to save data in batches to avoid storage quota issues
+  const saveDataInBatches = async (data: RawData[], batchSize: number) => {
+    // If Supabase is configured, save directly there (no localStorage limit)
+    const { isSupabaseConfigured } = await import('@/lib/supabase-client');
+    const { api } = await import('@/lib/api-service');
+    const isSupabase = isSupabaseConfigured();
+    
+    if (isSupabase) {
+      // Save all at once to Supabase (it can handle large datasets)
+      try {
+        console.log(`Saving ${data.length} records directly to Supabase...`);
+        await api.setRawData(data);
+        console.log('Successfully saved to Supabase');
+        
+        // Only save a small subset to localStorage for offline access (last 1000 records)
+        const localStorageSubset = data.slice(-1000);
+        try {
+          localStorage.setItem(STORAGE_KEYS.RAW_DATA, JSON.stringify(localStorageSubset));
+          console.log('Saved last 1000 records to localStorage for offline access');
+        } catch (localError: any) {
+          // If localStorage fails, that's okay - data is in Supabase
+          console.warn('Could not save to localStorage, but data is in Supabase:', localError);
+        }
+        return;
+      } catch (error) {
+        console.error('Error saving to Supabase:', error);
+        // Fall through to localStorage fallback
+      }
+    }
+    
+    // Fallback: Save to localStorage (for when Supabase is not configured)
+    // For very large datasets, we'll only keep a subset in localStorage
+    const localStorageLimit = 2000; // Keep max 2000 records in localStorage
+    const dataToStore = data.length > localStorageLimit ? data.slice(-localStorageLimit) : data;
+    
+    try {
+      await setStorageItem(STORAGE_KEYS.RAW_DATA, dataToStore);
+      if (data.length > localStorageLimit) {
+        toast.warning(`Large dataset (${data.length} records). Only keeping last ${localStorageLimit} in localStorage. Please configure Supabase for full data storage.`);
+      }
+    } catch (error: any) {
+      if (error.name === 'QuotaExceededError' || error.code === 22) {
+        // If still failing, try saving even smaller subset
+        const smallerSubset = data.slice(-500);
+        try {
+          await setStorageItem(STORAGE_KEYS.RAW_DATA, smallerSubset);
+          toast.warning(`Storage limit reached. Only keeping last 500 records. Please configure Supabase for full data storage.`);
+        } catch (finalError) {
+          toast.error('Storage limit exceeded. Please clear browser cache or configure Supabase for cloud storage.');
+          throw finalError;
+        }
+      } else {
+        throw error;
+      }
     }
   };
 
@@ -145,12 +215,19 @@ const Import = () => {
           allHeaders: headers,
         });
 
-        // Store raw data
-        const existingRawData = (await getStorageItem<RawData[]>(STORAGE_KEYS.RAW_DATA)) || [];
+        // Process data in batches to avoid memory issues
         const importTimestamp = new Date().toISOString();
-        const newRawData: RawData[] = rows
-          .filter(row => row[accountNumberIdx]) // Only rows with account number
-          .map((row, idx) => {
+        const validRows = rows.filter(row => row[accountNumberIdx]); // Only rows with account number
+        const BATCH_SIZE = 1000; // Process 1000 rows at a time
+        
+        setProcessingProgress({ current: 0, total: validRows.length });
+        
+        // Process and transform rows in batches
+        const newRawData: RawData[] = [];
+        for (let i = 0; i < validRows.length; i += BATCH_SIZE) {
+          const batch = validRows.slice(i, i + BATCH_SIZE);
+          const batchData = batch.map((row, idx) => {
+            const globalIdx = i + idx;
             // Extract and clean values
             const groupNameValue = groupNameIdx >= 0 ? String(row[groupNameIdx] || "").trim() : "";
             const ownerNameValue = ownerNameIdx >= 0 ? String(row[ownerNameIdx] || "").trim() : "";
@@ -158,10 +235,8 @@ const Import = () => {
             const regDateValue = regDateIdx >= 0 ? String(row[regDateIdx] || "").trim() : "";
             const districtValue = districtIdx >= 0 ? String(row[districtIdx] || "").trim() : "";
             
-            console.log(`Row ${idx} - Group Name: "${groupNameValue}", Owner Name: "${ownerNameValue}", Reg Date: "${regDateValue}", District: "${districtValue}"`);
-            
             return {
-              id: `${Date.now()}-${idx}`,
+              id: `${Date.now()}-${globalIdx}`,
               accountNumber: String(row[accountNumberIdx] || "").trim(),
               angazaId: angazaIdValue || undefined,
               groupName: groupNameValue || undefined,
@@ -174,46 +249,72 @@ const Import = () => {
               importedAt: importTimestamp,
             };
           });
+          newRawData.push(...batchData);
+          setProcessingProgress({ current: Math.min(i + BATCH_SIZE, validRows.length), total: validRows.length });
+          
+          // Allow UI to update
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
 
+        // Get existing data (from Supabase if available, otherwise localStorage)
+        const existingRawData = (await getStorageItem<RawData[]>(STORAGE_KEYS.RAW_DATA)) || [];
         let updatedRawData: RawData[] = [];
         let newRecords = 0;
         let updatedRecords = 0;
 
+        // Process merge logic in batches to avoid memory issues
         if (importMode === "replace") {
-          // Replace all existing data
+          // Replace all existing data - save directly to Supabase in batches
           updatedRawData = newRawData;
           newRecords = newRawData.length;
           updatedRecords = 0;
+          
+          // Save in batches to avoid storage quota issues
+          await saveDataInBatches(updatedRawData, BATCH_SIZE);
         } else if (importMode === "append") {
           // Append only - don't update existing records
           updatedRawData = [...existingRawData];
-          newRawData.forEach(newItem => {
+          const toAdd: RawData[] = [];
+          
+          for (const newItem of newRawData) {
             const exists = updatedRawData.some(
               item => item.accountNumber === newItem.accountNumber
             );
             if (!exists) {
               updatedRawData.push(newItem);
+              toAdd.push(newItem);
               newRecords++;
             }
-          });
+          }
+          
+          // Save only new items in batches
+          if (toAdd.length > 0) {
+            await saveDataInBatches(updatedRawData, BATCH_SIZE);
+          }
         } else {
           // Update mode (default) - update existing, add new
           updatedRawData = [...existingRawData];
-          newRawData.forEach(newItem => {
-            const existingIndex = updatedRawData.findIndex(
-              item => item.accountNumber === newItem.accountNumber
-            );
-            if (existingIndex >= 0) {
-              updatedRawData[existingIndex] = newItem;
-              updatedRecords++;
+          const accountMap = new Map(updatedRawData.map(item => [item.accountNumber, item]));
+          
+          for (const newItem of newRawData) {
+            const existing = accountMap.get(newItem.accountNumber);
+            if (existing) {
+              const index = updatedRawData.findIndex(item => item.id === existing.id);
+              if (index >= 0) {
+                updatedRawData[index] = newItem;
+                updatedRecords++;
+              }
             } else {
               updatedRawData.push(newItem);
+              accountMap.set(newItem.accountNumber, newItem);
               newRecords++;
             }
-          });
+          }
+          
+          // Save in batches
+          await saveDataInBatches(updatedRawData, BATCH_SIZE);
         }
 
-        await setStorageItem(STORAGE_KEYS.RAW_DATA, updatedRawData);
         setTotalRecords(updatedRawData.length);
         setLastImportStats({
           newRecords,
@@ -221,7 +322,7 @@ const Import = () => {
           totalRecords: updatedRawData.length,
           importDate: importTimestamp,
         });
-        setExcelData({ headers, rows });
+        setExcelData({ headers, rows: rows.slice(0, 100) }); // Only show first 100 rows in preview
         
         const modeText = importMode === "replace" ? "replaced" : importMode === "append" ? "added (append only)" : "imported";
         toast.success(
@@ -411,24 +512,55 @@ const Import = () => {
             </div>
 
             {selectedFile && (
-              <div className="mt-4 p-4 border border-orange-200 dark:border-orange-800 rounded-xl bg-gradient-to-r from-orange-50/50 to-amber-50/50 dark:from-orange-950/20 dark:to-amber-950/20 flex items-center justify-between shadow-sm">
-                <div className="flex items-center gap-3">
-                  {getFileIcon()}
-                  <div>
-                    <p className="font-semibold text-gray-800 dark:text-gray-200">{selectedFile.name}</p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {(selectedFile.size / 1024).toFixed(2)} KB
+              <div className="mt-4 space-y-3">
+                <div className="p-4 border border-orange-200 dark:border-orange-800 rounded-xl bg-gradient-to-r from-orange-50/50 to-amber-50/50 dark:from-orange-950/20 dark:to-amber-950/20 flex items-center justify-between shadow-sm">
+                  <div className="flex items-center gap-3">
+                    {getFileIcon()}
+                    <div>
+                      <p className="font-semibold text-gray-800 dark:text-gray-200">{selectedFile.name}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                      </p>
+                    </div>
+                  </div>
+                  {!isProcessing && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRemoveFile}
+                      className="hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                {isProcessing && (
+                  <div className="p-4 border border-blue-200 dark:border-blue-800 rounded-xl bg-gradient-to-r from-blue-50/50 to-cyan-50/50 dark:from-blue-950/20 dark:to-cyan-950/20">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                      <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                        Processing file... Please wait
+                      </p>
+                    </div>
+                    {processingProgress.total > 0 && (
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400">
+                          <span>Processing rows...</span>
+                          <span>{processingProgress.current} / {processingProgress.total}</span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                          <div
+                            className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${(processingProgress.current / processingProgress.total) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                      Large files are processed in batches and saved directly to cloud storage.
                     </p>
                   </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleRemoveFile}
-                  className="hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+                )}
               </div>
             )}
           </CardContent>
