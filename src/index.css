@@ -1,0 +1,226 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 220 25% 20%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 20%;
+
+    --primary: 45 100% 50%;
+    --primary-foreground: 220 25% 20%;
+
+    --secondary: 200 100% 85%;
+    --secondary-foreground: 220 25% 20%;
+
+    --muted: 200 50% 96%;
+    --muted-foreground: 220 15% 45%;
+
+    --accent: 200 100% 70%;
+    --accent-foreground: 220 25% 20%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 45 100% 50%;
+    --warning-foreground: 220 25% 20%;
+
+    --border: 200 50% 85%;
+    --input: 200 50% 92%;
+    --ring: 45 100% 50%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 200 100% 25%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 45 100% 50%;
+    --sidebar-primary-foreground: 220 25% 20%;
+    --sidebar-accent: 200 100% 30%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 200 100% 30%;
+    --sidebar-ring: 45 100% 50%;
+
+    --chart-1: 45 100% 50%;
+    --chart-2: 200 100% 60%;
+    --chart-3: 45 90% 60%;
+    --chart-4: 200 80% 50%;
+    --chart-5: 45 80% 40%;
+  }
+
+  .dark {
+    --background: 220 25% 10%;
+    --foreground: 200 20% 95%;
+
+    --card: 220 25% 12%;
+    --card-foreground: 200 20% 95%;
+
+    --popover: 220 25% 12%;
+    --popover-foreground: 200 20% 95%;
+
+    --primary: 45 100% 50%;
+    --primary-foreground: 220 25% 20%;
+
+    --secondary: 200 80% 25%;
+    --secondary-foreground: 200 20% 95%;
+
+    --muted: 220 20% 20%;
+    --muted-foreground: 200 15% 65%;
+
+    --accent: 200 100% 60%;
+    --accent-foreground: 220 25% 20%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 200 20% 95%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 45 100% 50%;
+    --warning-foreground: 220 25% 20%;
+
+    --border: 200 40% 30%;
+    --input: 200 40% 25%;
+    --ring: 45 100% 50%;
+
+    --sidebar-background: 200 100% 25%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 45 100% 50%;
+    --sidebar-primary-foreground: 220 25% 20%;
+    --sidebar-accent: 200 100% 30%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 200 100% 30%;
+    --sidebar-ring: 45 100% 50%;
+
+    --chart-1: 45 100% 50%;
+    --chart-2: 200 100% 60%;
+    --chart-3: 45 90% 60%;
+    --chart-4: 200 80% 50%;
+    --chart-5: 45 80% 40%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* Smooth animations */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateX(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -1000px 0;
+    }
+    100% {
+      background-position: 1000px 0;
+    }
+  }
+
+  .animate-fadeIn {
+    animation: fadeIn 0.5s ease-out;
+  }
+
+  .animate-slideIn {
+    animation: slideIn 0.4s ease-out;
+  }
+
+  .animate-scaleIn {
+    animation: scaleIn 0.3s ease-out;
+  }
+
+  /* Gradient text animations */
+  .gradient-text {
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: shimmer 3s linear infinite;
+  }
+
+  /* Glass morphism effect */
+  .glass {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  /* Hover glow effect */
+  .hover-glow:hover {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+    transition: box-shadow 0.3s ease;
+  }
+
+  @keyframes blob {
+    0% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    33% {
+      transform: translate(30px, -20px) scale(1.1);
+    }
+    66% {
+      transform: translate(-20px, 20px) scale(0.9);
+    }
+    100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+  }
+
+  .animate-blob {
+    animation: blob 12s infinite;
+  }
+
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+}
