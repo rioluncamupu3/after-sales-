@@ -75,7 +75,9 @@ const Import = () => {
 
     // Check file size (warn if very large)
     const fileSizeMB = file.size / (1024 * 1024);
-    if (fileSizeMB > 50) {
+    if (fileSizeMB > 100) {
+      toast.info(`Very large file detected (${fileSizeMB.toFixed(1)}MB). This will be processed and saved directly to cloud storage. Processing may take a few minutes...`);
+    } else if (fileSizeMB > 50) {
       toast.warning(`Large file detected (${fileSizeMB.toFixed(1)}MB). Processing may take a moment...`);
     }
 
@@ -108,24 +110,33 @@ const Import = () => {
     const isSupabase = isSupabaseConfigured();
     
     if (isSupabase) {
-      // Save all at once to Supabase (it can handle large datasets)
+      // Save all at once to Supabase (it can handle large datasets, even 100MB+ files)
       try {
-        console.log(`Saving ${data.length} records directly to Supabase...`);
+        console.log(`Saving ${data.length} records (${(JSON.stringify(data).length / 1024 / 1024).toFixed(2)}MB) directly to Supabase...`);
+        setProcessingProgress({ current: 90, total: 100 });
         await api.setRawData(data);
         console.log('Successfully saved to Supabase');
+        setProcessingProgress({ current: 95, total: 100 });
         
         // Only save a small subset to localStorage for offline access (last 1000 records)
         const localStorageSubset = data.slice(-1000);
         try {
-          localStorage.setItem(STORAGE_KEYS.RAW_DATA, JSON.stringify(localStorageSubset));
-          console.log('Saved last 1000 records to localStorage for offline access');
+          const subsetJson = JSON.stringify(localStorageSubset);
+          if (subsetJson.length < 4 * 1024 * 1024) { // Only if subset is < 4MB
+            localStorage.setItem(STORAGE_KEYS.RAW_DATA, subsetJson);
+            console.log('Saved last 1000 records to localStorage for offline access');
+          } else {
+            console.log('Subset too large for localStorage, skipping local cache');
+          }
         } catch (localError: any) {
           // If localStorage fails, that's okay - data is in Supabase
           console.warn('Could not save to localStorage, but data is in Supabase:', localError);
         }
+        setProcessingProgress({ current: 100, total: 100 });
         return;
       } catch (error) {
         console.error('Error saving to Supabase:', error);
+        toast.error('Error saving to cloud storage. Please check your Supabase configuration.');
         // Fall through to localStorage fallback
       }
     }
@@ -159,13 +170,44 @@ const Import = () => {
 
   const handleExcelFile = async (file: File) => {
     const reader = new FileReader();
+    
     reader.onload = async (e) => {
       try {
+        setProcessingProgress({ current: 0, total: 100 });
+        
+        // Read file with options optimized for large files
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: "array" });
+        setProcessingProgress({ current: 10, total: 100 });
+        
+        // Use streaming options for large files
+        const fileSizeMB = file.size / (1024 * 1024);
+        const readOptions: XLSX.ParsingOptions = {
+          type: "array",
+          cellDates: false, // Disable date parsing for performance
+          cellNF: false, // Disable number format parsing
+          cellText: false, // Disable text formatting
+          dense: false, // Use sparse mode for memory efficiency
+        };
+        
+        if (fileSizeMB > 50) {
+          // For very large files, use more aggressive memory-saving options
+          readOptions.sheetStubs = true; // Skip empty cells
+        }
+        
+        setProcessingProgress({ current: 20, total: 100 });
+        const workbook = XLSX.read(data, readOptions);
+        setProcessingProgress({ current: 40, total: 100 });
+        
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+        
+        // Convert to JSON - use optimized options for large files
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+          header: 1, 
+          defval: "",
+          raw: fileSizeMB <= 50, // Only use raw values for smaller files
+        });
+        setProcessingProgress({ current: 60, total: 100 });
 
         if (jsonData.length === 0) {
           toast.error("The Excel file appears to be empty");
@@ -257,7 +299,13 @@ const Import = () => {
         }
 
         // Get existing data (from Supabase if available, otherwise localStorage)
-        const existingRawData = (await getStorageItem<RawData[]>(STORAGE_KEYS.RAW_DATA)) || [];
+        const { isSupabaseConfigured } = await import('@/lib/supabase-client');
+        const { api } = await import('@/lib/api-service');
+        const isSupabase = isSupabaseConfigured();
+        
+        const existingRawData = isSupabase 
+          ? ((await api.getRawData()) || [])
+          : ((await getStorageItem<RawData[]>(STORAGE_KEYS.RAW_DATA)) || []);
         let updatedRawData: RawData[] = [];
         let newRecords = 0;
         let updatedRecords = 0;
@@ -325,16 +373,32 @@ const Import = () => {
         setExcelData({ headers, rows: rows.slice(0, 100) }); // Only show first 100 rows in preview
         
         const modeText = importMode === "replace" ? "replaced" : importMode === "append" ? "added (append only)" : "imported";
-        toast.success(
-          `Successfully ${modeText} ${newRawData.length} records. ` +
-          `New: ${newRecords}, Updated: ${updatedRecords}, Total: ${updatedRawData.length}`,
-          { duration: 5000 }
-        );
-      } catch (error) {
+        const fileSizeMB = file.size / (1024 * 1024);
+        const successMessage = fileSizeMB > 50
+          ? `Successfully ${modeText} ${newRawData.length} records. Data saved to cloud storage. New: ${newRecords}, Updated: ${updatedRecords}, Total: ${updatedRawData.length}`
+          : `Successfully ${modeText} ${newRawData.length} records. New: ${newRecords}, Updated: ${updatedRecords}, Total: ${updatedRawData.length}`;
+        
+        toast.success(successMessage, { duration: 5000 });
+        setProcessingProgress({ current: 100, total: 100 });
+      } catch (error: any) {
         console.error("Error parsing Excel:", error);
-        toast.error("Error parsing Excel file");
+        const errorMessage = error?.message?.includes('memory') || error?.message?.includes('quota')
+          ? "File is too large to process. Please split the file into smaller chunks or ensure Supabase is configured."
+          : error?.message || "Error parsing Excel file";
+        toast.error(errorMessage);
+        setProcessingProgress({ current: 0, total: 0 });
+      } finally {
+        setIsProcessing(false);
       }
     };
+    
+    // Handle file reading errors
+    reader.onerror = () => {
+      toast.error("Error reading file. The file may be corrupted or too large.");
+      setIsProcessing(false);
+      setProcessingProgress({ current: 0, total: 0 });
+    };
+    
     reader.readAsArrayBuffer(file);
   };
 

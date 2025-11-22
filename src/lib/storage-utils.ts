@@ -303,7 +303,7 @@ export function clearOldStorageData(): number {
 }
 
 // Get storage usage information
-export function getStorageInfo(): { used: number; available: number; percentage: number } {
+export function getStorageInfo(): { used: number; available: number; percentage: number; usingSupabase: boolean } {
   try {
     let total = 0;
     for (let key in localStorage) {
@@ -317,10 +317,13 @@ export function getStorageInfo(): { used: number; available: number; percentage:
     const available = Math.max(0, estimatedLimit - used);
     const percentage = (used / estimatedLimit) * 100;
     
-    return { used, available, percentage };
+    // Check if Supabase is configured
+    const usingSupabase = isSupabaseConfigured();
+    
+    return { used, available, percentage, usingSupabase };
   } catch (error) {
     console.error('Error getting storage info:', error);
-    return { used: 0, available: 0, percentage: 0 };
+    return { used: 0, available: 0, percentage: 0, usingSupabase: false };
   }
 }
 

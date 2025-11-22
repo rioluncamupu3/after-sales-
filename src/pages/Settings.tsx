@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/table";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { Moon, Sun, User, Lock, Trash2, LogOut, Image, X, Plus, Edit, Settings as SettingsIcon, Database, AlertTriangle } from "lucide-react";
+import { Moon, Sun, User, Lock, Trash2, LogOut, Image, X, Plus, Edit, Settings as SettingsIcon, Database, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getStorageItem, setStorageItem, STORAGE_KEYS, clearOldStorageData, getStorageInfo } from "@/lib/storage-utils";
 import { hashPassword, verifyPassword, clearSession } from "@/lib/security-utils";
@@ -641,8 +641,16 @@ const Settings = () => {
           </CardHeader>
           <CardContent className="relative z-10 space-y-4 pt-6">
             <div className="space-y-3">
+              {storageInfo.usingSupabase && (
+                <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg">
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  <span className="text-sm font-medium text-green-700 dark:text-green-300">
+                    Cloud Storage Active: Large files (100MB+) are saved directly to Supabase. No local storage limits!
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Storage Used</span>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Local Storage Used</span>
                 <span className="text-sm font-semibold text-gray-900 dark:text-gray-50">
                   {(storageInfo.used / 1024 / 1024).toFixed(2)} MB / ~5 MB
                 </span>
@@ -663,6 +671,12 @@ const Settings = () => {
                 <span>{storageInfo.percentage.toFixed(1)}% used</span>
                 <span>{(storageInfo.available / 1024 / 1024).toFixed(2)} MB available</span>
               </div>
+              {!storageInfo.usingSupabase && (
+                <p className="text-xs text-orange-600 dark:text-orange-400 font-medium">
+                  <AlertTriangle className="inline h-3 w-3 mr-1" />
+                  Large files may fail. Configure Supabase for unlimited cloud storage.
+                </p>
+              )}
             </div>
             
             {storageInfo.percentage > 70 && (
