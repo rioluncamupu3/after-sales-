@@ -650,27 +650,42 @@ const Settings = () => {
                 </div>
               )}
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Local Storage Used</span>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {storageInfo.usingSupabase ? "Cloud Storage (Network)" : "Local Storage Used"}
+                </span>
                 <span className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-                  {(storageInfo.used / 1024 / 1024).toFixed(2)} MB / ~500 MB
+                  {storageInfo.usingSupabase 
+                    ? "Unlimited (Cloud)" 
+                    : `${(storageInfo.used / 1024 / 1024).toFixed(2)} MB / ~500 MB`}
                 </span>
               </div>
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-                <div
-                  className={`h-2.5 rounded-full transition-all duration-300 ${
-                    storageInfo.percentage > 80
-                      ? "bg-gradient-to-r from-red-500 to-rose-500"
-                      : storageInfo.percentage > 60
-                      ? "bg-gradient-to-r from-orange-500 to-amber-500"
-                      : "bg-gradient-to-r from-blue-500 to-indigo-500"
-                  }`}
-                  style={{ width: `${Math.min(storageInfo.percentage, 100)}%` }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>{storageInfo.percentage.toFixed(1)}% used</span>
-                <span>{(storageInfo.available / 1024 / 1024).toFixed(2)} MB available</span>
-              </div>
+              {!storageInfo.usingSupabase && (
+                <>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                    <div
+                      className={`h-2.5 rounded-full transition-all duration-300 ${
+                        storageInfo.percentage > 80
+                          ? "bg-gradient-to-r from-red-500 to-rose-500"
+                          : storageInfo.percentage > 60
+                          ? "bg-gradient-to-r from-orange-500 to-amber-500"
+                          : "bg-gradient-to-r from-blue-500 to-indigo-500"
+                      }`}
+                      style={{ width: `${Math.min(storageInfo.percentage, 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{storageInfo.percentage.toFixed(1)}% used</span>
+                    <span>{(storageInfo.available / 1024 / 1024).toFixed(2)} MB available</span>
+                  </div>
+                </>
+              )}
+              {storageInfo.usingSupabase && (
+                <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    <strong>✓ All data is stored in cloud storage (Supabase).</strong> No local storage limits. Your data is synced across all devices.
+                  </p>
+                </div>
+              )}
               {!storageInfo.usingSupabase && (
                 <p className="text-xs text-orange-600 dark:text-orange-400 font-medium">
                   <AlertTriangle className="inline h-3 w-3 mr-1" />
